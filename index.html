@@ -88,6 +88,15 @@ select{width:100%;margin-top:4px;padding:9px 11px;border-radius:10px;background:
   background-repeat:no-repeat;background-position:right 11px center}
 .note{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .note b{color:var(--link)}
+.seg{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg-btn{flex:1;border:none;background:transparent;color:var(--muted);font-family:inherit;font-size:12.5px;
+  font-weight:600;padding:8px 6px;border-radius:7px;cursor:pointer;transition:.15s;-webkit-tap-highlight-color:transparent}
+.seg-btn:hover{color:var(--txt)}
+.seg-btn.active{background:var(--accent);color:#0e1116}
+/* satellite-mode contrast: brighten boundaries + label halos over imagery */
+body.sat{--district:#ffd24a;--district-glow:rgba(255,210,74,.5);--district-hi:#ffe27a}
+body.sat .distlabel{color:#fff;text-shadow:0 1px 2px #000,0 0 5px #000,0 0 5px #000}
+body.sat .linklabel{background:rgba(0,0,0,.6);border-color:rgba(255,210,74,.5);color:#ffe27a}
 
 /* markers */
 .mk{border-radius:50%;border:2px solid var(--mk-border)}
@@ -102,6 +111,11 @@ select{width:100%;margin-top:4px;padding:9px 11px;border-radius:10px;background:
 .pop h3{margin:0 0 6px;font-size:13.5px;line-height:1.3}
 .pop .row{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:2px 0;color:var(--muted)}
 .pop .row b{color:var(--txt);font-weight:500;text-align:right}
+.pop .svbtn{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding:8px 10px;
+  border-radius:9px;background:var(--accent);color:#0e1116;font-weight:600;font-size:11.5px;text-decoration:none;
+  letter-spacing:.01em;transition:.15s;-webkit-tap-highlight-color:transparent}
+.pop .svbtn:hover{filter:brightness(1.08)}
+.pop .svbtn svg{flex:none}
 .leaflet-bar a,.leaflet-control-zoom a{background:var(--panel)!important;color:var(--txt)!important;border-color:var(--line)!important}
 .leaflet-bar a:hover{background:var(--panel-2)!important}
 .cluster-s,.cluster-c{border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:#0e1116;border:2px solid #0e1116}
@@ -173,9 +187,14 @@ select{width:100%;margin-top:4px;padding:9px 11px;border-radius:10px;background:
     <div class="toggle on" data-layer="ccpls"><span class="dot ccpl"></span><span class="tx"><b>Crash-Prone Locations</b><span>CCPL points</span></span><span class="sw"></span></div>
     <div class="toggle on" data-layer="links"><span class="dot link"></span><span class="tx"><b>Distance Links</b><span>School → CCPL, km</span></span><span class="sw"></span></div>
     <div class="toggle on" data-layer="districts"><span class="dot district"></span><span class="tx"><b>District Boundaries</b><span>Uttar Pradesh · 20 districts</span></span><span class="sw"></span></div>
+    <div class="sect" style="margin-top:16px">Basemap</div>
+    <div class="seg" id="baseSeg">
+      <button class="seg-btn" data-base="map">Map</button>
+      <button class="seg-btn active" data-base="satellite">Satellite</button>
+    </div>
     <div class="sect" style="margin-top:16px">Go to District</div>
     <select id="district" aria-label="Select a district"><option value="">All 20 districts</option></select>
-    <div class="note">Lines show the straight-line <b>km_to_ccpl</b> distance — not a road route. Pick or tap a district to zoom; zoom to a city to reveal distance labels.</div>
+    <div class="note">Lines show the straight-line <b>km_to_ccpl</b> distance — not a road route. Click a crash-prone point for details and <b>Street View</b>. Pick or tap a district to zoom.</div>
   </div>
 </aside>
 <div id="hint">Zoom in to a district to see <b>distance links &amp; labels</b></div>
@@ -206,6 +225,12 @@ const TILES={
 const tile=L.tileLayer(TILES.light,{
   maxZoom:19,subdomains:'abcd',
   attribution:'&copy; OpenStreetMap &copy; CARTO'
+});
+// Satellite basemap. maxNativeZoom stops requests for tiles that don't exist
+// (which render as "no imagery available"); Leaflet upscales the z18 tile instead.
+const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+  maxZoom:19, maxNativeZoom:18,
+  attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'
 }).addTo(map);
 
 
@@ -254,6 +279,8 @@ const schoolMarkers=[], ccplMarkers=[];
 function buildMarkers(filter){
   schoolLayer.clearLayers(); ccplLayer.clearLayers();
   schoolMarkers.length=0; ccplMarkers.length=0;
+  const sv=(lat,lon)=>`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`;
+  const svBtn=(lat,lon)=>`<a class="svbtn" href="${sv(lat,lon)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg> Open Street View</a>`;
   DATA.schools.forEach((s,i)=>{
     if(filter && s[1]!==filter) return;
     const m=L.marker([s[2],s[3]],{icon:sIcon()});
@@ -267,7 +294,8 @@ function buildMarkers(filter){
     m.bindPopup(`<div class="pop"><span class="tag c">Crash-Prone Location</span><h3>${c[0]}</h3>`+
       `<div class="row"><span>District</span><b>${c[2]||'—'}</b></div>`+
       `<div class="row"><span>Risk time</span><b>${c[1]||'—'}</b></div>`+
-      `<div class="row"><span>Coordinates</span><b class="mono">${c[3].toFixed(4)}, ${c[4].toFixed(4)}</b></div></div>`,{maxWidth:280});
+      `<div class="row"><span>Coordinates</span><b class="mono">${c[3].toFixed(4)}, ${c[4].toFixed(4)}</b></div>`+
+      svBtn(c[3],c[4])+`</div>`,{maxWidth:280});
     ccplMarkers[i]=m;
   });
   // ccpls: only those connected to filtered schools (or all)
@@ -354,6 +382,28 @@ function setTheme(t){
   if(enabled.links) redrawLinks();   // recolor permanent labels for the theme
 }
 document.getElementById('themeBtn').addEventListener('click',()=>setTheme(theme==='dark'?'light':'dark'));
+
+// basemap switcher: themed map tiles vs Esri satellite imagery
+let basemap='satellite';
+document.body.classList.add('sat');
+function setBasemap(b){
+  basemap=b;
+  if(b==='satellite'){
+    if(map.hasLayer(tile)) map.removeLayer(tile);
+    esri.addTo(map);
+    document.body.classList.add('sat');
+  }else{
+    if(map.hasLayer(esri)) map.removeLayer(esri);
+    tile.addTo(map);
+    document.body.classList.remove('sat');
+  }
+  document.querySelectorAll('#baseSeg .seg-btn').forEach(x=>x.classList.toggle('active',x.dataset.base===b));
+  restyleDistricts();
+  if(enabled.links) redrawLinks();   // recolor distance labels for the basemap
+}
+document.querySelectorAll('#baseSeg .seg-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>setBasemap(btn.dataset.base));
+});
 
 // district dropdown: filter data + zoom to district
 const districtBounds={};
